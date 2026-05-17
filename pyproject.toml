@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "ai-audio-transcription"
+version = "0.1.0"
+description = "Speech-to-text через OpenRouter (OpenAI SDK)"
+authors = ["You <you@example.com>"]
+readme = "README.md"
+packages = [{ include = "ai_audio_transcription", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+openai = "^1.82.0"
+python-dotenv = "^1.1.0"
+pydantic-settings = "^2.9.0"
+typer = "^0.16.0"
+sounddevice = "^0.5.1"
+numpy = "^2.2.0"
+customtkinter = "^5.2.2"
+
+[tool.poetry.scripts]
+transcribe = "ai_audio_transcription.cli:run_transcribe"
+record = "ai_audio_transcription.cli:run_record"
+list-stt-models = "ai_audio_transcription.cli:list_stt_models"
+app = "ai_audio_transcription.ui.app:main"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
