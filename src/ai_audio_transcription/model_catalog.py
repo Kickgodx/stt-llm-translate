@@ -18,16 +18,20 @@ class ModelOption:
 
 # --- STT (output_modalities=transcription) ---
 STT_MODELS: tuple[ModelOption, ...] = (
-    ModelOption("openai/whisper-large-v3-turbo", "баланс цена/скорость"),
-    ModelOption("openai/whisper-1", "дёшево"),
-    ModelOption("openai/whisper-large-v3", "качество"),
+    ModelOption("openai/whisper-large-v3-turbo", "Whisper Large v3 Turbo, 0.04/h"),
+    ModelOption("openai/whisper-large-v3", "Whisper Large v3, 0.111/h"),
+    ModelOption("openai/whisper-1", "Whisper 1, 0.36/h"),
 )
 
 # --- LLM (перевод / промпт) ---
 CHAT_MODELS: tuple[ModelOption, ...] = (
-    ModelOption("google/gemini-2.0-flash-001", "MVP / дёшево"),
-    ModelOption("meta-llama/llama-3.1-8b-instruct", "ещё дешевле"),
-    ModelOption("deepseek/deepseek-chat", "низкая цена"),
+    ModelOption("mistralai/mistral-small-24b-instruct-2501", "Small 3, 0.05/0.08"),
+    ModelOption("mistralai/mistral-small-3.2-24b-instruct", "Small 3.2, 0.075/0.2"),
+    ModelOption("mistralai/mistral-small-2603", "Small 4, 0.15/0.6"),
+    ModelOption("google/gemini-2.0-flash-001", "Gemini 2.0 Flash, 0.1/0.4"),
+    ModelOption("google/gemini-2.0-flash-lite-001", "Gemini 2.0 Flash Lite, 0.075/0.3"),
+    ModelOption("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B Instruct, 0.1/0.32"),
+    ModelOption("deepseek/deepseek-v3.2", "DeepSeek V3.2, 0.25/0.4"),
 )
 
 DEFAULT_STT_MODEL: str = STT_MODELS[0].id
