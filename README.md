@@ -7,7 +7,7 @@ Speech-to-text через [OpenRouter STT API](https://openrouter.ai/docs/guides
 ```bash
 poetry install
 cp .env.example .env
-# укажите OPENROUTER_API_KEY и модель
+# укажите OPENROUTER_API_KEY
 ```
 
 ## Запуск
@@ -16,35 +16,26 @@ cp .env.example .env
 poetry run app
 ```
 
-Два режима (переключатель вверху):
+Два режима: **Пакетная запись** и **Лайв (по паузе)**. Модели STT и LLM — выпадающие списки в UI.
 
-| Режим | Поведение |
-|-------|-----------|
-| **Пакетная запись** | Запись → Стоп → один ответ |
-| **Лайв (по паузе)** | Слушает непрерывно; после паузы — STT + стрим перевода в две колонки |
+## Каталог моделей (одна точка входа)
 
-Также: выбор аудиофайла с диска, промпт/перевод, настройка STT и LLM моделей.
+Список моделей задаётся в **`src/ai_audio_transcription/model_catalog.py`**:
 
-Лайв: короткие промпты LLM (`LIVE_LLM_MAX_TOKENS=256`), порог паузы `LIVE_PAUSE_MS=800`.
+- `STT_MODELS` — для распознавания речи
+- `CHAT_MODELS` — для перевода / промпта
 
-## Модели (подсказка)
+Дефолты `DEFAULT_STT_MODEL` / `DEFAULT_CHAT_MODEL` и поля в `config.py` ссылаются на этот файл.
 
-### STT (распознавание)
+В `.env` можно переопределить выбранную по умолчанию модель:
 
-| Модель | Когда брать |
-| --- | --- |
-| `openai/whisper-1` | Дёшево, поминутная оплата |
-| `openai/whisper-large-v3-turbo` | Баланс цена/скорость (дефолт) |
-| `openai/whisper-large-v3` | Максимум качества |
+```env
+OPENROUTER_MODEL=openai/whisper-1
+OPENROUTER_CHAT_MODEL=google/gemini-2.0-flash-001
+```
 
-### LLM (перевод / промпт)
+Если id из `.env` нет в каталоге, он всё равно появится в выпадающем списке (пометка «из .env»).
 
-По умолчанию: `google/gemini-2.0-flash-001`.
+## Прочие настройки `.env`
 
-| Модель | Когда брать |
-| --- | --- |
-| `google/gemini-2.0-flash-001` | Дефолт для MVP |
-| `meta-llama/llama-3.1-8b-instruct` | Ещё дешевле |
-| `deepseek/deepseek-chat` | Низкая цена на OpenRouter |
-
-Актуальные цены: [openrouter.ai/models](https://openrouter.ai/models).
+См. `.env.example` — `LIVE_PAUSE_MS`, `LOG_LEVEL`, и т.д.

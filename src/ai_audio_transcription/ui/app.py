@@ -7,6 +7,12 @@ import customtkinter as ctk
 
 from ai_audio_transcription.live import LiveEvent, LiveSession
 from ai_audio_transcription.logging_config import get_logger
+from ai_audio_transcription.model_catalog import (
+    chat_options_for_ui,
+    id_from_chat_label,
+    id_from_stt_label,
+    stt_options_for_ui,
+)
 from ai_audio_transcription.recorder import MicrophoneSession
 from ai_audio_transcription.service import AudioService, ProcessOptions, format_result
 
@@ -152,15 +158,28 @@ class TranscriptionApp(ctk.CTk):
         settings.grid_columnconfigure(1, weight=1)
         settings.grid_columnconfigure(3, weight=1)
 
+        self._stt_labels, self._stt_ids, stt_default = stt_options_for_ui(
+            self.service.settings.openrouter_model
+        )
+        self._chat_labels, self._chat_ids, chat_default = chat_options_for_ui(
+            self.service.settings.openrouter_chat_model
+        )
+
         ctk.CTkLabel(settings, text="STT модель").grid(row=0, column=0, sticky="w", padx=8, pady=8)
-        self.stt_model_entry = ctk.CTkEntry(settings)
-        self.stt_model_entry.insert(0, self.service.settings.openrouter_model)
-        self.stt_model_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=8)
+        self.stt_model_var = ctk.StringVar(value=stt_default)
+        ctk.CTkOptionMenu(
+            settings,
+            variable=self.stt_model_var,
+            values=self._stt_labels,
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=8)
 
         ctk.CTkLabel(settings, text="LLM модель").grid(row=0, column=2, sticky="w", padx=8, pady=8)
-        self.chat_model_entry = ctk.CTkEntry(settings)
-        self.chat_model_entry.insert(0, self.service.settings.openrouter_chat_model)
-        self.chat_model_entry.grid(row=0, column=3, sticky="ew", padx=(0, 8), pady=8)
+        self.chat_model_var = ctk.StringVar(value=chat_default)
+        ctk.CTkOptionMenu(
+            settings,
+            variable=self.chat_model_var,
+            values=self._chat_labels,
+        ).grid(row=0, column=3, sticky="ew", padx=(0, 8), pady=8)
 
         file_row = ctk.CTkFrame(controls, fg_color="transparent")
         file_row.grid(row=4, column=0, sticky="ew", pady=(12, 0))
@@ -272,8 +291,10 @@ class TranscriptionApp(ctk.CTk):
         translate = TRANSLATE_OPTIONS[self.translate_var.get()]
         language = self.language_entry.get().strip() or None
         return ProcessOptions(
-            model=self.stt_model_entry.get().strip() or None,
-            chat_model=self.chat_model_entry.get().strip() or None,
+            model=id_from_stt_label(self.stt_model_var.get(), self._stt_ids, self._stt_labels),
+            chat_model=id_from_chat_label(
+                self.chat_model_var.get(), self._chat_ids, self._chat_labels
+            ),
             language=language,
             prompt=prompt,
             translate=translate,

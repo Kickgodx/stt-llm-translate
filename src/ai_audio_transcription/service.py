@@ -67,12 +67,11 @@ class AudioService:
     def __init__(self) -> None:
         load_dotenv()
         self.settings = Settings()
+        stt, chat = self.settings.resolved_models()
+        self.settings.openrouter_model = stt
+        self.settings.openrouter_chat_model = chat
         setup_logging(self.settings.log_level)
-        log.info(
-            "Сервис запущен: STT=%s, LLM=%s",
-            self.settings.openrouter_model,
-            self.settings.openrouter_chat_model,
-        )
+        log.info("Сервис запущен: STT=%s, LLM=%s", stt, chat)
         client = create_openrouter_client(self.settings)
         self.processor = AudioProcessor(client, self.settings)
 

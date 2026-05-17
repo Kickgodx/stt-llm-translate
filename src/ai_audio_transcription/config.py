@@ -1,5 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ai_audio_transcription.model_catalog import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_STT_MODEL,
+    resolve_chat_model,
+    resolve_stt_model,
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -9,8 +16,8 @@ class Settings(BaseSettings):
     )
 
     openrouter_api_key: str
-    openrouter_model: str = "openai/whisper-large-v3-turbo"
-    openrouter_chat_model: str = "google/gemini-2.0-flash-001"
+    openrouter_model: str = DEFAULT_STT_MODEL
+    openrouter_chat_model: str = DEFAULT_CHAT_MODEL
     openrouter_language: str | None = None
     record_sample_rate: int = 16000
     record_ram_max_seconds: float = 300.0
@@ -24,3 +31,10 @@ class Settings(BaseSettings):
     x_openrouter_title: str | None = None
 
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+
+    def resolved_models(self) -> tuple[str, str]:
+        """STT и LLM с учётом .env и каталога."""
+        return (
+            resolve_stt_model(self.openrouter_model),
+            resolve_chat_model(self.openrouter_chat_model),
+        )
