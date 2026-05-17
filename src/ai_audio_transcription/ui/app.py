@@ -56,7 +56,7 @@ class TranscriptionApp(ctk.CTk):
         self._selected_file: Path | None = None
         self._mode = ctk.StringVar(value=MODE_BATCH)
         self._ui_events: queue.Queue[LiveEvent] = queue.Queue()
-        self._live_translation_buffers: dict[int, str] = {}
+        self._live_has_llm = False
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -230,23 +230,10 @@ class TranscriptionApp(ctk.CTk):
 
         self.live_output_frame = ctk.CTkFrame(output_outer, fg_color="transparent")
         self.live_output_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        self.live_output_frame.grid_columnconfigure((0, 1), weight=1)
-        self.live_output_frame.grid_rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            self.live_output_frame,
-            text="Транскрипт",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=4)
-        ctk.CTkLabel(
-            self.live_output_frame,
-            text="Перевод / LLM",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).grid(row=0, column=1, sticky="w", padx=4)
-        self.transcript_box = ctk.CTkTextbox(self.live_output_frame, font=ctk.CTkFont(size=14))
-        self.transcript_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
-        self.translation_box = ctk.CTkTextbox(self.live_output_frame, font=ctk.CTkFont(size=14))
-        self.translation_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
+        self.live_output_frame.grid_rowconfigure(0, weight=1)
+        self.live_output_frame.grid_columnconfigure(0, weight=1)
+        self.live_box = ctk.CTkTextbox(self.live_output_frame, font=ctk.CTkFont(size=14))
+        self.live_box.grid(row=0, column=0, sticky="nsew")
 
         self._show_batch_output()
 
@@ -380,7 +367,7 @@ class TranscriptionApp(ctk.CTk):
                 return
 
         self._clear_live_output()
-        self._live_translation_buffers.clear()
+        self._live_has_llm = bool(options.prompt or options.translate)
 
         def on_event(event: LiveEvent) -> None:
             self._ui_events.put(event)
@@ -437,19 +424,16 @@ class TranscriptionApp(ctk.CTk):
         elif event.type == "segment_queued":
             self._set_status(f"В очереди: {event.queue_size}")
         elif event.type == "stt_done":
-            line = f"[{event.segment_id}] {event.text}\n"
-            self.transcript_box.insert("end", line)
-            self.transcript_box.see("end")
-            self._live_translation_buffers[event.segment_id] = ""
-            self.translation_box.insert("end", f"[{event.segment_id}] ")
-            self.translation_box.see("end")
+            self.live_box.insert("end", f"\n[{event.segment_id}]\n{event.text}\n")
+            if self._live_has_llm:
+                self.live_box.insert("end", "→ ")
+            self.live_box.see("end")
         elif event.type == "translation_delta":
-            self.translation_box.insert("end", event.text)
-            self.translation_box.see("end")
-            buf = self._live_translation_buffers.get(event.segment_id, "")
-            self._live_translation_buffers[event.segment_id] = buf + event.text
+            self.live_box.insert("end", event.text)
+            self.live_box.see("end")
         elif event.type == "segment_done":
-            self.translation_box.insert("end", "\n")
+            self.live_box.insert("end", "\n")
+            self.live_box.see("end")
             self._set_status("Слушаю…")
         elif event.type == "error":
             messagebox.showerror("Лайв", event.error or "Ошибка")
@@ -534,12 +518,7 @@ class TranscriptionApp(ctk.CTk):
 
     def _copy_output(self) -> None:
         if self._is_live_mode():
-            content = (
-                "=== Транскрипт ===\n"
-                + self.transcript_box.get("1.0", "end").strip()
-                + "\n\n=== Перевод ===\n"
-                + self.translation_box.get("1.0", "end").strip()
-            )
+            content = self.live_box.get("1.0", "end").strip()
         else:
             content = self.output_box.get("1.0", "end").strip()
         if content:
@@ -555,9 +534,7 @@ class TranscriptionApp(ctk.CTk):
         self._set_status("Очищено")
 
     def _clear_live_output(self) -> None:
-        self.transcript_box.delete("1.0", "end")
-        self.translation_box.delete("1.0", "end")
-        self._live_translation_buffers.clear()
+        self.live_box.delete("1.0", "end")
 
     def _on_close(self) -> None:
         if self._live_session and self._live_session.is_active:
