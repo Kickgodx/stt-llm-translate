@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -5,15 +6,15 @@ from openai import OpenAI
 
 from ai_audio_transcription.config import Settings
 from ai_audio_transcription.logging_config import get_logger
+from ai_audio_transcription.prompts import (
+    BATCH_LLM_SYSTEM,
+    LIVE_LLM_SYSTEM,
+    build_live_user_content,
+)
 from ai_audio_transcription.schemas import AudioProcessResult, TranscriptionUsage
 from ai_audio_transcription.transcriber import OpenRouterTranscriber
 
 log = get_logger("processor")
-
-SYSTEM_PROMPT = (
-    "Ты обрабатываешь транскрипцию речи по инструкции пользователя. "
-    "Верни только итоговый текст без пояснений и метаданных."
-)
 
 
 class AudioProcessor:
@@ -52,7 +53,7 @@ class AudioProcessor:
         post_prompt: str | None = None,
         chat_model: str | None = None,
     ) -> AudioProcessResult:
-        log.info("Обработка записи с микрофона (в памяти, без файла на диске)")
+        log.info("Обработка аудио в памяти")
         stt = self._transcriber.transcribe_array(
             audio,
             sample_rate=sample_rate,
@@ -61,6 +62,53 @@ class AudioProcessor:
             temperature=temperature,
         )
         return self._after_stt(stt, post_prompt=post_prompt, chat_model=chat_model)
+
+    def transcribe_segment(
+        self,
+        audio: np.ndarray,
+        *,
+        sample_rate: int,
+        stt_model: str,
+        language: str | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        log.info("Лайв STT сегмента")
+        result = self._transcriber.transcribe_array(
+            audio,
+            sample_rate=sample_rate,
+            model=stt_model,
+            language=language,
+            temperature=temperature,
+        )
+        return result.text
+
+    def stream_live_post(
+        self,
+        transcript: str,
+        post_prompt_template: str,
+        *,
+        model: str,
+        max_tokens: int = 256,
+    ) -> Iterator[str]:
+        """Стрим перевода/постобработки для лайв-режима (короткий промпт)."""
+        user_content = build_live_user_content(post_prompt_template, transcript)
+        log.info("Лайв LLM stream: model=%s", model)
+        stream = self._client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=0,
+            stream=True,
+            messages=[
+                {"role": "system", "content": LIVE_LLM_SYSTEM},
+                {"role": "user", "content": user_content},
+            ],
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
     def _after_stt(
         self,
@@ -74,12 +122,11 @@ class AudioProcessor:
 
         if post_prompt:
             model = chat_model or self._settings.openrouter_chat_model
-            log.info("Постобработка LLM: модель=%s", model)
-            text, chat_usage = self._apply_post_prompt(stt.text, post_prompt, model=model)
+            log.info("Batch LLM: model=%s", model)
+            text, chat_usage = self._apply_batch_post(stt.text, post_prompt, model=model)
         else:
             log.info("LLM пропущена (нет промпта/перевода)")
 
-        log.info("Обработка завершена")
         return AudioProcessResult(
             text=text,
             transcript=stt.text if post_prompt else None,
@@ -87,7 +134,7 @@ class AudioProcessor:
             chat_usage=chat_usage,
         )
 
-    def _apply_post_prompt(
+    def _apply_batch_post(
         self,
         transcript: str,
         post_prompt: str,
@@ -96,8 +143,9 @@ class AudioProcessor:
     ) -> tuple[str, TranscriptionUsage | None]:
         response = self._client.chat.completions.create(
             model=model,
+            temperature=0,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": BATCH_LLM_SYSTEM},
                 {
                     "role": "user",
                     "content": f"Инструкция:\n{post_prompt}\n\nТранскрипция:\n{transcript}",
@@ -115,5 +163,4 @@ class AudioProcessor:
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
             )
-        log.info("LLM готова: %s символов", len(content))
         return content.strip(), usage

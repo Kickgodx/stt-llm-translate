@@ -1,9 +1,11 @@
+import queue
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from ai_audio_transcription.live import LiveEvent, LiveSession
 from ai_audio_transcription.logging_config import get_logger
 from ai_audio_transcription.recorder import MicrophoneSession
 from ai_audio_transcription.service import AudioService, ProcessOptions, format_result
@@ -12,6 +14,9 @@ log = get_logger("ui")
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+MODE_BATCH = "Пакетная запись"
+MODE_LIVE = "Лайв (по паузе)"
 
 TRANSLATE_OPTIONS = {
     "Без перевода": None,
@@ -24,8 +29,8 @@ class TranscriptionApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AI Audio Transcription")
-        self.geometry("820x720")
-        self.minsize(640, 560)
+        self.geometry("860x760")
+        self.minsize(680, 580)
 
         try:
             self.service = AudioService()
@@ -40,11 +45,16 @@ class TranscriptionApp(ctk.CTk):
             sample_rate=self.service.settings.record_sample_rate,
             ram_max_seconds=self.service.settings.record_ram_max_seconds,
         )
+        self._live_session: LiveSession | None = None
         self._processing = False
         self._selected_file: Path | None = None
+        self._mode = ctk.StringVar(value=MODE_BATCH)
+        self._ui_events: queue.Queue[LiveEvent] = queue.Queue()
+        self._live_translation_buffers: dict[int, str] = {}
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._poll_ui_events()
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -62,14 +72,25 @@ class TranscriptionApp(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             header,
-            text="Готов к записи",
+            text="Готов",
             font=ctk.CTkFont(size=13),
             text_color=("gray50", "gray60"),
         )
         self.status_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
+        mode_row = ctk.CTkFrame(self, fg_color="transparent")
+        mode_row.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 4))
+        ctk.CTkLabel(mode_row, text="Режим").pack(side="left", padx=(0, 8))
+        self.mode_switch = ctk.CTkSegmentedButton(
+            mode_row,
+            values=[MODE_BATCH, MODE_LIVE],
+            variable=self._mode,
+            command=self._on_mode_changed,
+        )
+        self.mode_switch.pack(side="left", fill="x", expand=True)
+
         controls = ctk.CTkFrame(self)
-        controls.grid(row=1, column=0, sticky="ew", padx=20, pady=8)
+        controls.grid(row=2, column=0, sticky="ew", padx=20, pady=4)
         controls.grid_columnconfigure(0, weight=1)
 
         self.record_btn = ctk.CTkButton(
@@ -79,20 +100,18 @@ class TranscriptionApp(ctk.CTk):
             font=ctk.CTkFont(size=18, weight="bold"),
             fg_color="#2d8a4e",
             hover_color="#246e3f",
-            command=self._toggle_recording,
+            command=self._toggle_record,
         )
         self.record_btn.grid(row=0, column=0, sticky="ew", pady=(0, 12))
 
         prompt_frame = ctk.CTkFrame(controls, fg_color="transparent")
         prompt_frame.grid(row=1, column=0, sticky="ew")
         prompt_frame.grid_columnconfigure(1, weight=1)
-
         ctk.CTkLabel(prompt_frame, text="Промпт LLM").grid(
             row=0, column=0, sticky="nw", padx=(0, 8)
         )
         self.prompt_box = ctk.CTkTextbox(prompt_frame, height=72)
         self.prompt_box.grid(row=0, column=1, sticky="ew")
-        self.prompt_box.insert("1.0", "")
 
         opts = ctk.CTkFrame(controls, fg_color="transparent")
         opts.grid(row=2, column=0, sticky="ew", pady=(10, 0))
@@ -100,7 +119,7 @@ class TranscriptionApp(ctk.CTk):
             opts.grid_columnconfigure(i, weight=1)
 
         ctk.CTkLabel(opts, text="Перевод").grid(row=0, column=0, sticky="w")
-        self.translate_var = ctk.StringVar(value="Без перевода")
+        self.translate_var = ctk.StringVar(value="Перевод на EN")
         ctk.CTkOptionMenu(
             opts,
             variable=self.translate_var,
@@ -114,11 +133,12 @@ class TranscriptionApp(ctk.CTk):
         self.language_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
 
         self.show_transcript_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
+        self.show_transcript_cb = ctk.CTkCheckBox(
             opts,
             text="Показать транскрипцию",
             variable=self.show_transcript_var,
-        ).grid(row=1, column=2, sticky="w", padx=(0, 8))
+        )
+        self.show_transcript_cb.grid(row=1, column=2, sticky="w", padx=(0, 8))
 
         self.show_usage_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(
@@ -145,7 +165,6 @@ class TranscriptionApp(ctk.CTk):
         file_row = ctk.CTkFrame(controls, fg_color="transparent")
         file_row.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         file_row.grid_columnconfigure(1, weight=1)
-
         ctk.CTkButton(file_row, text="Выбрать файл", width=140, command=self._pick_file).grid(
             row=0, column=0, padx=(0, 8)
         )
@@ -156,23 +175,26 @@ class TranscriptionApp(ctk.CTk):
             text_color=("gray40", "gray55"),
         )
         self.file_label.grid(row=0, column=1, sticky="ew")
-        ctk.CTkButton(
+        self.process_file_btn = ctk.CTkButton(
             file_row,
             text="Обработать файл",
             width=160,
             command=self._process_file_clicked,
-        ).grid(row=0, column=2, padx=(8, 0))
-
-        output_frame = ctk.CTkFrame(self)
-        output_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(8, 12))
-        output_frame.grid_rowconfigure(1, weight=1)
-        output_frame.grid_columnconfigure(0, weight=1)
-
-        actions = ctk.CTkFrame(output_frame, fg_color="transparent")
-        actions.grid(row=0, column=0, sticky="ew", pady=(12, 8), padx=12)
-        ctk.CTkLabel(actions, text="Ответ", font=ctk.CTkFont(size=15, weight="bold")).pack(
-            side="left"
         )
+        self.process_file_btn.grid(row=0, column=2, padx=(8, 0))
+
+        output_outer = ctk.CTkFrame(self)
+        output_outer.grid(row=3, column=0, sticky="nsew", padx=20, pady=(8, 12))
+        output_outer.grid_rowconfigure(1, weight=1)
+        output_outer.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(3, weight=1)
+
+        actions = ctk.CTkFrame(output_outer, fg_color="transparent")
+        actions.grid(row=0, column=0, sticky="ew", pady=(12, 8), padx=12)
+        self.output_title = ctk.CTkLabel(
+            actions, text="Ответ", font=ctk.CTkFont(size=15, weight="bold")
+        )
+        self.output_title.pack(side="left")
         ctk.CTkButton(actions, text="Копировать", width=110, command=self._copy_output).pack(
             side="right", padx=(8, 0)
         )
@@ -180,8 +202,70 @@ class TranscriptionApp(ctk.CTk):
             side="right"
         )
 
-        self.output_box = ctk.CTkTextbox(output_frame, font=ctk.CTkFont(size=14))
-        self.output_box.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.batch_output_frame = ctk.CTkFrame(output_outer, fg_color="transparent")
+        self.batch_output_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.batch_output_frame.grid_rowconfigure(0, weight=1)
+        self.batch_output_frame.grid_columnconfigure(0, weight=1)
+        self.output_box = ctk.CTkTextbox(self.batch_output_frame, font=ctk.CTkFont(size=14))
+        self.output_box.grid(row=0, column=0, sticky="nsew")
+
+        self.live_output_frame = ctk.CTkFrame(output_outer, fg_color="transparent")
+        self.live_output_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.live_output_frame.grid_columnconfigure((0, 1), weight=1)
+        self.live_output_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            self.live_output_frame,
+            text="Транскрипт",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=4)
+        ctk.CTkLabel(
+            self.live_output_frame,
+            text="Перевод / LLM",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).grid(row=0, column=1, sticky="w", padx=4)
+        self.transcript_box = ctk.CTkTextbox(self.live_output_frame, font=ctk.CTkFont(size=14))
+        self.transcript_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
+        self.translation_box = ctk.CTkTextbox(self.live_output_frame, font=ctk.CTkFont(size=14))
+        self.translation_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
+
+        self._show_batch_output()
+
+    def _is_live_mode(self) -> bool:
+        return self._mode.get() == MODE_LIVE
+
+    def _is_busy(self) -> bool:
+        return (
+            self._processing
+            or self.mic.is_recording
+            or (self._live_session is not None and self._live_session.is_active)
+        )
+
+    def _on_mode_changed(self, _value: str) -> None:
+        if self._is_busy():
+            messagebox.showwarning("Режим", "Сначала остановите запись.")
+            self._mode.set(MODE_LIVE if self._is_live_mode() else MODE_BATCH)
+            return
+        if self._is_live_mode():
+            self._show_live_output()
+            self._set_status("Лайв: нажмите кнопку для старта")
+            self.record_btn.configure(text="Старт лайв")
+            self.show_transcript_cb.configure(state="disabled")
+        else:
+            self._show_batch_output()
+            self._set_status("Готов к записи")
+            self.record_btn.configure(text="Запись")
+            self.show_transcript_cb.configure(state="normal")
+
+    def _show_batch_output(self) -> None:
+        self.live_output_frame.grid_remove()
+        self.batch_output_frame.grid()
+        self.output_title.configure(text="Ответ")
+
+    def _show_live_output(self) -> None:
+        self.batch_output_frame.grid_remove()
+        self.live_output_frame.grid()
+        self.output_title.configure(text="Лайв")
 
     def _collect_options(self) -> ProcessOptions:
         prompt = self.prompt_box.get("1.0", "end").strip() or None
@@ -201,19 +285,26 @@ class TranscriptionApp(ctk.CTk):
     def _set_busy(self, busy: bool) -> None:
         self._processing = busy
         state = "disabled" if busy else "normal"
-        self.record_btn.configure(state=state)
-        if not self.mic.is_recording:
+        if not self.mic.is_recording and not (self._live_session and self._live_session.is_active):
             self.record_btn.configure(state=state)
+        self.mode_switch.configure(state=state)
+        self.process_file_btn.configure(state=state)
 
-    def _toggle_recording(self) -> None:
+    def _toggle_record(self) -> None:
         if self._processing:
             return
-        if self.mic.is_recording:
-            self._stop_and_send()
+        if self._is_live_mode():
+            self._toggle_live()
         else:
-            self._start_recording()
+            self._toggle_batch()
 
-    def _start_recording(self) -> None:
+    def _toggle_batch(self) -> None:
+        if self.mic.is_recording:
+            self._stop_batch()
+        else:
+            self._start_batch()
+
+    def _start_batch(self) -> None:
         try:
             self.mic.start()
         except Exception as exc:
@@ -226,7 +317,7 @@ class TranscriptionApp(ctk.CTk):
         )
         self._set_status("Идёт запись…")
 
-    def _stop_and_send(self) -> None:
+    def _stop_batch(self) -> None:
         try:
             recording = self.mic.stop()
         except Exception as exc:
@@ -240,34 +331,110 @@ class TranscriptionApp(ctk.CTk):
         options = self._collect_options()
 
         if recording.used_file:
-            log.info(
-                "Отправка из файла (%.1f с > RAM-порог): %s",
-                recording.duration_seconds,
-                recording.path.name,
-            )
             threading.Thread(
                 target=self._run_process_file,
                 args=(recording.path, options, True),
                 daemon=True,
             ).start()
         else:
-            log.info(
-                "Отправка из RAM (%.1f с): %.1f KB",
-                recording.duration_seconds,
-                recording.audio.nbytes / 1024,
-            )
             threading.Thread(
                 target=self._run_process_audio,
                 args=(recording.audio, options),
                 daemon=True,
             ).start()
 
-    def _reset_record_button(self) -> None:
+    def _toggle_live(self) -> None:
+        if self._live_session and self._live_session.is_active:
+            self._stop_live()
+        else:
+            self._start_live()
+
+    def _start_live(self) -> None:
+        options = self._collect_options()
+        if not options.prompt and not options.translate:
+            if not messagebox.askyesno(
+                "Лайв",
+                "Без перевода/промпта будет только транскрипт.\nПродолжить?",
+            ):
+                return
+
+        self._clear_live_output()
+        self._live_translation_buffers.clear()
+
+        def on_event(event: LiveEvent) -> None:
+            self._ui_events.put(event)
+
+        self._live_session = LiveSession(
+            settings=self.service.settings,
+            processor=self.service.processor,
+            on_event=on_event,
+        )
+        try:
+            self._live_session.start(options)
+        except Exception as exc:
+            self._live_session = None
+            messagebox.showerror("Лайв", str(exc))
+            return
+
         self.record_btn.configure(
-            text="Запись",
+            text="Стоп лайв",
+            fg_color="#b83232",
+            hover_color="#962828",
+        )
+        self.mode_switch.configure(state="disabled")
+        self._set_status("Слушаю… говорите, пауза = новая реплика")
+
+    def _stop_live(self) -> None:
+        if self._live_session:
+            self._live_session.stop()
+            self._live_session = None
+        self._reset_record_button()
+        self.mode_switch.configure(state="normal")
+        self._set_status("Лайв остановлен")
+
+    def _reset_record_button(self) -> None:
+        label = "Старт лайв" if self._is_live_mode() else "Запись"
+        self.record_btn.configure(
+            text=label,
             fg_color="#2d8a4e",
             hover_color="#246e3f",
+            state="normal",
         )
+
+    def _poll_ui_events(self) -> None:
+        while True:
+            try:
+                event = self._ui_events.get_nowait()
+            except queue.Empty:
+                break
+            self._handle_live_event(event)
+        self.after(100, self._poll_ui_events)
+
+    def _handle_live_event(self, event: LiveEvent) -> None:
+        if event.type == "listening":
+            self._set_status("Слушаю…")
+        elif event.type == "segment_queued":
+            self._set_status(f"В очереди: {event.queue_size}")
+        elif event.type == "stt_done":
+            line = f"[{event.segment_id}] {event.text}\n"
+            self.transcript_box.insert("end", line)
+            self.transcript_box.see("end")
+            self._live_translation_buffers[event.segment_id] = ""
+            self.translation_box.insert("end", f"[{event.segment_id}] ")
+            self.translation_box.see("end")
+        elif event.type == "translation_delta":
+            self.translation_box.insert("end", event.text)
+            self.translation_box.see("end")
+            buf = self._live_translation_buffers.get(event.segment_id, "")
+            self._live_translation_buffers[event.segment_id] = buf + event.text
+        elif event.type == "segment_done":
+            self.translation_box.insert("end", "\n")
+            self._set_status("Слушаю…")
+        elif event.type == "error":
+            messagebox.showerror("Лайв", event.error or "Ошибка")
+            self._set_status("Ошибка сегмента")
+        elif event.type == "stopped":
+            self._set_status("Лайв остановлен")
 
     def _pick_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -282,13 +449,12 @@ class TranscriptionApp(ctk.CTk):
             self.file_label.configure(text=self._selected_file.name)
 
     def _process_file_clicked(self) -> None:
-        if self._processing or self.mic.is_recording:
+        if self._is_busy():
             return
         if not self._selected_file:
             messagebox.showwarning("Файл", "Сначала выберите аудиофайл.")
             return
         self._set_status("Обработка файла…")
-        log.info("Обработка выбранного файла: %s", self._selected_file)
         self._set_busy(True)
         options = self._collect_options()
         threading.Thread(
@@ -308,9 +474,9 @@ class TranscriptionApp(ctk.CTk):
                 show_usage=self.show_usage_var.get(),
             )
         except Exception as exc:
-            log.exception("Ошибка обработки записи (RAM)")
+            log.exception("Ошибка batch RAM")
             error = str(exc)
-        self.after(0, lambda: self._on_process_done(text, error))
+        self.after(0, lambda: self._on_batch_done(text, error))
 
     def _run_process_file(
         self,
@@ -328,16 +494,14 @@ class TranscriptionApp(ctk.CTk):
                 show_usage=self.show_usage_var.get(),
             )
         except Exception as exc:
-            log.exception("Ошибка обработки")
+            log.exception("Ошибка batch file")
             error = str(exc)
         finally:
             if delete_after:
                 audio_path.unlink(missing_ok=True)
-                log.info("Временный файл удалён: %s", audio_path.name)
+        self.after(0, lambda: self._on_batch_done(text, error))
 
-        self.after(0, lambda: self._on_process_done(text, error))
-
-    def _on_process_done(self, text: str, error: str | None) -> None:
+    def _on_batch_done(self, text: str, error: str | None) -> None:
         self._set_busy(False)
         if error:
             self._set_status("Ошибка")
@@ -345,20 +509,38 @@ class TranscriptionApp(ctk.CTk):
             return
         self.output_box.delete("1.0", "end")
         self.output_box.insert("1.0", text)
-        self._set_status("Готов к записи")
+        self._set_status("Готов")
 
     def _copy_output(self) -> None:
-        content = self.output_box.get("1.0", "end").strip()
+        if self._is_live_mode():
+            content = (
+                "=== Транскрипт ===\n"
+                + self.transcript_box.get("1.0", "end").strip()
+                + "\n\n=== Перевод ===\n"
+                + self.translation_box.get("1.0", "end").strip()
+            )
+        else:
+            content = self.output_box.get("1.0", "end").strip()
         if content:
             self.clipboard_clear()
             self.clipboard_append(content)
             self._set_status("Скопировано")
 
     def _clear_output(self) -> None:
-        self.output_box.delete("1.0", "end")
-        self._set_status("Готов к записи")
+        if self._is_live_mode():
+            self._clear_live_output()
+        else:
+            self.output_box.delete("1.0", "end")
+        self._set_status("Очищено")
+
+    def _clear_live_output(self) -> None:
+        self.transcript_box.delete("1.0", "end")
+        self.translation_box.delete("1.0", "end")
+        self._live_translation_buffers.clear()
 
     def _on_close(self) -> None:
+        if self._live_session and self._live_session.is_active:
+            self._live_session.stop()
         if self.mic.is_recording:
             try:
                 self.mic.stop()
