@@ -10,9 +10,7 @@ cp .env.example .env
 # укажите OPENROUTER_API_KEY и модель
 ```
 
-## Использование
-
-### GUI (рекомендуется)
+## Запуск
 
 ```bash
 poetry run app
@@ -22,34 +20,12 @@ poetry run app
 
 | Режим | Поведение |
 |-------|-----------|
-| **Пакетная запись** | Запись → Стоп → один ответ (как раньше) |
-| **Лайв (по паузе)** | Непрерывно слушает; после паузы — STT + стрим перевода в две колонки |
+| **Пакетная запись** | Запись → Стоп → один ответ |
+| **Лайв (по паузе)** | Слушает непрерывно; после паузы — STT + стрим перевода в две колонки |
 
-Лайв: короткие промпты LLM (`max_tokens=256`), дешёвая модель из `.env`. Порог паузы: `LIVE_PAUSE_MS=800`.
+Также: выбор аудиофайла с диска, промпт/перевод, настройка STT и LLM моделей.
 
-### CLI
-
-```bash
-# транскрипция файла
-poetry run transcribe path/to/audio.mp3
-
-# запись с микрофона (Enter — остановить)
-poetry run record
-
-# запись 5 секунд + перевод на английский
-poetry run record --duration 5 --translate en --language ru
-
-# свой промпт после транскрипции
-poetry run record --prompt "Переведи на английский. Только перевод."
-
-# с языком и другой моделью
-poetry run transcribe audio.wav --language ru --model openai/whisper-1
-
-# список STT-моделей на OpenRouter
-poetry run list-stt-models
-```
-
-Пайплайн с `--prompt` / `--translate`: **микрофон/файл → Whisper (STT) → LLM** (`OPENROUTER_CHAT_MODEL`) по вашей инструкции.
+Лайв: короткие промпты LLM (`LIVE_LLM_MAX_TOKENS=256`), порог паузы `LIVE_PAUSE_MS=800`.
 
 ## Модели (подсказка)
 
@@ -57,18 +33,18 @@ poetry run list-stt-models
 
 | Модель | Когда брать |
 | --- | --- |
-| `openai/whisper-1` | Дёшево, поминутная оплата, проверенная классика |
-| `openai/whisper-large-v3-turbo` | Баланс цена/скорость, много языков |
-| `openai/whisper-large-v3` | Максимум качества, шумные записи |
+| `openai/whisper-1` | Дёшево, поминутная оплата |
+| `openai/whisper-large-v3-turbo` | Баланс цена/скорость (дефолт) |
+| `openai/whisper-large-v3` | Максимум качества |
 
-### LLM (перевод / промпт, только при `--prompt` или переводе)
+### LLM (перевод / промпт)
 
-По умолчанию: `google/gemini-2.0-flash-001` — дёшево для MVP.
+По умолчанию: `google/gemini-2.0-flash-001`.
 
 | Модель | Когда брать |
 | --- | --- |
-| `google/gemini-2.0-flash-001` | Дефолт: перевод, простые инструкции |
-| `meta-llama/llama-3.1-8b-instruct` | Ещё дешевле, базовые задачи |
-| `deepseek/deepseek-chat` | Очень низкая цена на OpenRouter |
+| `google/gemini-2.0-flash-001` | Дефолт для MVP |
+| `meta-llama/llama-3.1-8b-instruct` | Ещё дешевле |
+| `deepseek/deepseek-chat` | Низкая цена на OpenRouter |
 
 Актуальные цены: [openrouter.ai/models](https://openrouter.ai/models).

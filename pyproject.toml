@@ -11,15 +11,11 @@ python = "^3.11"
 openai = "^1.82.0"
 python-dotenv = "^1.1.0"
 pydantic-settings = "^2.9.0"
-typer = "^0.16.0"
 sounddevice = "^0.5.1"
 numpy = "^2.2.0"
 customtkinter = "^5.2.2"
 
 [tool.poetry.scripts]
-transcribe = "ai_audio_transcription.cli:run_transcribe"
-record = "ai_audio_transcription.cli:run_record"
-list-stt-models = "ai_audio_transcription.cli:list_stt_models"
 app = "ai_audio_transcription.ui.app:main"
 
 [tool.poetry.group.dev.dependencies]
