@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     openrouter_model: str = DEFAULT_STT_MODEL
     openrouter_chat_model: str = DEFAULT_CHAT_MODEL
     openrouter_language: str | None = None
+    # Через запятую: python, sdet, automation — дополняют промпты STT/LLM
+    openrouter_glossary: str | None = None
+    # Подсказка Whisper (экспериментально; OpenRouter может игнорировать)
+    openrouter_stt_prompt: str | None = None
     record_sample_rate: int = 16000
     record_ram_max_seconds: float = 300.0
     live_pause_ms: float = 800.0

@@ -7,9 +7,10 @@ from openai import OpenAI
 from ai_audio_transcription.config import Settings
 from ai_audio_transcription.logging_config import get_logger
 from ai_audio_transcription.prompts import (
-    BATCH_LLM_SYSTEM,
-    LIVE_LLM_SYSTEM,
+    batch_llm_system,
     build_live_user_content,
+    default_stt_prompt,
+    live_llm_system,
 )
 from ai_audio_transcription.schemas import AudioProcessResult, TranscriptionUsage
 from ai_audio_transcription.transcriber import OpenRouterTranscriber
@@ -39,6 +40,7 @@ class AudioProcessor:
             model=stt_model,
             language=language,
             temperature=temperature,
+            prompt=self._stt_prompt(),
         )
         return self._after_stt(stt, post_prompt=post_prompt, chat_model=chat_model)
 
@@ -60,6 +62,7 @@ class AudioProcessor:
             model=stt_model,
             language=language,
             temperature=temperature,
+            prompt=self._stt_prompt(),
         )
         return self._after_stt(stt, post_prompt=post_prompt, chat_model=chat_model)
 
@@ -79,6 +82,7 @@ class AudioProcessor:
             model=stt_model,
             language=language,
             temperature=temperature,
+            prompt=self._stt_prompt(),
         )
         return result.text
 
@@ -99,7 +103,10 @@ class AudioProcessor:
             temperature=0,
             stream=True,
             messages=[
-                {"role": "system", "content": LIVE_LLM_SYSTEM},
+                {
+                    "role": "system",
+                    "content": live_llm_system(glossary=self._settings.openrouter_glossary),
+                },
                 {"role": "user", "content": user_content},
             ],
         )
@@ -145,7 +152,10 @@ class AudioProcessor:
             model=model,
             temperature=0,
             messages=[
-                {"role": "system", "content": BATCH_LLM_SYSTEM},
+                {
+                    "role": "system",
+                    "content": batch_llm_system(glossary=self._settings.openrouter_glossary),
+                },
                 {
                     "role": "user",
                     "content": f"Инструкция:\n{post_prompt}\n\nТранскрипция:\n{transcript}",
@@ -164,3 +174,8 @@ class AudioProcessor:
                 output_tokens=response.usage.completion_tokens,
             )
         return content.strip(), usage
+
+    def _stt_prompt(self) -> str | None:
+        if self._settings.openrouter_stt_prompt:
+            return self._settings.openrouter_stt_prompt.strip() or None
+        return default_stt_prompt(glossary=self._settings.openrouter_glossary)
