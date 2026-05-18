@@ -109,6 +109,9 @@ class AudioProcessor:
                 },
                 {"role": "user", "content": user_content},
             ],
+            extra_body={
+                "session_id": "audio_stream_live_post",
+            },
         )
         for chunk in stream:
             if not chunk.choices:
@@ -161,6 +164,9 @@ class AudioProcessor:
                     "content": f"Инструкция:\n{post_prompt}\n\nТранскрипция:\n{transcript}",
                 },
             ],
+            extra_body={
+                "session_id": "audio_batch_post",
+            },
         )
         content = response.choices[0].message.content
         if not content:

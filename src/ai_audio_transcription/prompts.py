@@ -2,14 +2,14 @@
 
 # Речь в основном на русском, но с английскими IT/QA-терминами
 CODE_SWITCHING_HINT = (
-    "Основной язык речи — русский, но встречаются английские слова и термины "
-    "(Python, SDET, automation, API, test, pytest и т.п.). "
-    "Сохраняй такие термины латиницей; не транслитерируй (не «пайтон», «эсдет») "
-    "и не переводи их, если пользователь не просил иное."
+    "В речи могут встречаться английские технические термины. "
+    "Если они есть в транскрипции — сохраняй их латиницей; не транслитерируй. "
+    "Не добавляй и не выдумывай термины, которых нет в исходном тексте."
 )
 
 CODE_SWITCHING_HINT_SHORT = (
-    "Russian speech with English tech terms — keep terms in Latin (Python, SDET, API)."
+    "If English tech terms appear in the source, keep them in Latin. "
+    "Do not add terms that are not in the source."
 )
 
 TRANSLATE_PROMPTS: dict[str, str] = {
@@ -17,14 +17,14 @@ TRANSLATE_PROMPTS: dict[str, str] = {
         "Пользователь говорит на русском или другом языке, иногда вставляет английские термины. "
         "Переведи сказанное на английский. "
         f"{CODE_SWITCHING_HINT} "
-        "Исправляй ошибочную транслитерацию в транскрипте (пайтон → Python). "
-        "Выведи только перевод, без пояснений."
+        "Исправляй ошибочную транслитерацию только если термин уже есть в тексте. "
+        "Не дополняй перевод. Выведи только перевод, без пояснений."
     ),
     "ru": (
         "The user speaks in English or another language, sometimes mixing Russian. "
         "Translate what was said into Russian. "
-        "Keep English technical terms in Latin (Python, SDET, automation, API). "
-        "Do not transliterate them into Cyrillic. "
+        "Keep English technical terms in Latin only if they appear in the source. "
+        "Do not transliterate them into Cyrillic. Do not add terms not in the source. "
         "Output only the translation, no commentary."
     ),
 }
@@ -37,14 +37,15 @@ BATCH_LLM_SYSTEM = (
 
 # Минимальные промпты для лайв-режима (экономия токенов)
 LIVE_LLM_SYSTEM = (
-    "Translate the utterance. "
+    "Translate only the text in the user message. "
+    "Do not add sentences, examples, or explanations. "
     f"{CODE_SWITCHING_HINT_SHORT} "
-    "Output only the translation, nothing else."
+    "Output only the translation."
 )
 
 LIVE_TRANSLATE_USER: dict[str, str] = {
-    "en": "To English (keep tech terms in Latin):\n{text}",
-    "ru": "To Russian (keep English tech terms in Latin):\n{text}",
+    "en": "Translate to English:\n{text}",
+    "ru": "Translate to Russian:\n{text}",
 }
 
 
@@ -105,9 +106,7 @@ def default_stt_prompt(*, glossary: str | None = None) -> str | None:
     Подсказка для Whisper (если API провайдера её принимает).
     Короткий «стилевой» фрагмент с типичной лексикой улучшает распознавание терминов.
     """
-    base = (
-        "Разговор на русском языке. Термины: Python, SDET, automation, API, test, pytest."
-    )
+    base = "Разговор на русском языке, возможны английские технические термины."
     extra = glossary_clause(glossary)
     if not extra:
         return base
