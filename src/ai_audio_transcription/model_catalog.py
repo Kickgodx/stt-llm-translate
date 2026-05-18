@@ -28,6 +28,7 @@ CHAT_MODELS: tuple[ModelOption, ...] = (
     ModelOption("google/gemini-2.0-flash-lite-001", "Google Gemini 2.0 Flash Lite, 0.075/0.3"),
     ModelOption("meta-llama/llama-3.3-70b-instruct", "Meta Llama 3.3 70B Instruct, 0.1/0.32"),
     ModelOption("deepseek/deepseek-v3.2", "DeepSeek V3.2, 0.25/0.4"),
+    ModelOption("openai/gpt-4o-mini", "OpenAI GPT-4o Mini, 0.15/0.6"),
 )
 
 DEFAULT_STT_MODEL: str = STT_MODELS[0].id
