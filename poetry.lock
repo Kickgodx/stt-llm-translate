@@ -512,6 +512,34 @@ files = [
 ]
 
 [[package]]
+name = "pyaudiowpatch"
+version = "0.2.12.8"
+description = "PortAudio fork with WASAPI loopback support"
+optional = false
+python-versions = "*"
+groups = ["main"]
+markers = "sys_platform == \"win32\""
+files = [
+    {file = "pyaudiowpatch-0.2.12.8-cp310-cp310-win32.whl", hash = "sha256:c5bffe533fdf37f36f58d8997f90247d46d42db2b1c4a970d9cc4637dacd322c"},
+    {file = "pyaudiowpatch-0.2.12.8-cp310-cp310-win_amd64.whl", hash = "sha256:7a2059464378213c0b83cdbea04a0ceacbdbd5ec791ffe29ed2ce490321aa604"},
+    {file = "pyaudiowpatch-0.2.12.8-cp311-cp311-win32.whl", hash = "sha256:13903f6a78abfd745fbae82c1edda95119fce179c6f2fc95e7849a54d537dce1"},
+    {file = "pyaudiowpatch-0.2.12.8-cp311-cp311-win_amd64.whl", hash = "sha256:8610948499efa12b01ec861408fcc95e7bc18c1dddf0abbfed6fd2305a898f63"},
+    {file = "pyaudiowpatch-0.2.12.8-cp312-cp312-win32.whl", hash = "sha256:5c6f54cbee50ed3c971767cc8e85f45e94012aa3c4363b7cdd8541e9f9496d01"},
+    {file = "pyaudiowpatch-0.2.12.8-cp312-cp312-win_amd64.whl", hash = "sha256:fd163a6531c4e4969925e687ef1bc57fae8ecc1a95de7ba707a436622552d7fa"},
+    {file = "pyaudiowpatch-0.2.12.8-cp313-cp313-win32.whl", hash = "sha256:d941c272ced5b1c6f1d054d47046ef50efcee954151c293c0102b410f549c3ab"},
+    {file = "pyaudiowpatch-0.2.12.8-cp313-cp313-win_amd64.whl", hash = "sha256:3339e6430836a021e1a83ddb915a42eec0a8f198693855a8f32a57b4b97e0202"},
+    {file = "pyaudiowpatch-0.2.12.8-cp314-cp314-win32.whl", hash = "sha256:448b83316295ab4786b1844ea296d4848c75b93ada4df6f2150715520cf985a5"},
+    {file = "pyaudiowpatch-0.2.12.8-cp314-cp314-win_amd64.whl", hash = "sha256:df6e26032439d87cbbeb8f433e635652a36d54cdd14aa058188e21ba5c9a7df9"},
+    {file = "pyaudiowpatch-0.2.12.8-cp38-cp38-win32.whl", hash = "sha256:82617f01581a563ffab228bdf6b31a72949ce7673bf7d2716294da142012b645"},
+    {file = "pyaudiowpatch-0.2.12.8-cp38-cp38-win_amd64.whl", hash = "sha256:0de232f72302c4a37162ab0c56f55616631b0490f213f7dbe651ba589d7d77a0"},
+    {file = "pyaudiowpatch-0.2.12.8-cp39-cp39-win32.whl", hash = "sha256:f9f7b48b3baa088e2bc1f8e4d465ce5341b62fcd7a57023427ff1d8f7b4c1269"},
+    {file = "pyaudiowpatch-0.2.12.8-cp39-cp39-win_amd64.whl", hash = "sha256:19dd0727ac54c5fc2062d3073a985099348fe8c57b7f284007c50b02f8601e57"},
+]
+
+[package.extras]
+test = ["numpy"]
+
+[[package]]
 name = "pycparser"
 version = "3.0"
 description = "C parser in Python"
@@ -832,4 +860,4 @@ typing-extensions = ">=4.12.0"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "b3c4567a00249fc773993cb747e1cf0bee247a797d320e4feafbb3829e32b602"
+content-hash = "9f019922747e610c439b5d9dddc66ad04df6ec9904ea508bd2f0f1f123ff7a9d"

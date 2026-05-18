@@ -1,10 +1,19 @@
 import queue
+import sys
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from ai_audio_transcription.audio_devices import (
+    AudioDeviceOption,
+    AudioSource,
+    CaptureConfig,
+    list_microphone_devices,
+    list_system_audio_devices,
+    system_audio_available,
+)
 from ai_audio_transcription.live import LiveEvent, LiveSession
 from ai_audio_transcription.logging_config import get_logger
 from ai_audio_transcription.model_catalog import (
@@ -13,7 +22,7 @@ from ai_audio_transcription.model_catalog import (
     id_from_stt_label,
     stt_options_for_ui,
 )
-from ai_audio_transcription.recorder import MicrophoneSession
+from ai_audio_transcription.recorder import AudioCaptureSession
 from ai_audio_transcription.service import AudioService, ProcessOptions, format_result
 
 log = get_logger("ui")
@@ -23,6 +32,9 @@ ctk.set_default_color_theme("blue")
 
 MODE_BATCH = "Пакетная запись"
 MODE_LIVE = "Лайв (по паузе)"
+
+SOURCE_MIC = "Микрофон"
+SOURCE_SYSTEM = "Системный звук"
 
 TRANSLATE_OPTIONS = {
     "Без перевода": None,
@@ -47,10 +59,11 @@ class TranscriptionApp(ctk.CTk):
             )
             raise
 
-        self.mic = MicrophoneSession(
+        self.capture = AudioCaptureSession(
             sample_rate=self.service.settings.record_sample_rate,
             ram_max_seconds=self.service.settings.record_ram_max_seconds,
         )
+        self._device_options: list[AudioDeviceOption] = []
         self._live_session: LiveSession | None = None
         self._processing = False
         self._selected_file: Path | None = None
@@ -95,8 +108,34 @@ class TranscriptionApp(ctk.CTk):
         )
         self.mode_switch.pack(side="left", fill="x", expand=True)
 
+        input_row = ctk.CTkFrame(self, fg_color="transparent")
+        input_row.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 4))
+        input_row.grid_columnconfigure(3, weight=1)
+        ctk.CTkLabel(input_row, text="Источник").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        source_values = [SOURCE_MIC, SOURCE_SYSTEM]
+        if not system_audio_available():
+            source_values = [SOURCE_MIC]
+        self._source_var = ctk.StringVar(value=SOURCE_MIC)
+        self.source_switch = ctk.CTkSegmentedButton(
+            input_row,
+            values=source_values,
+            variable=self._source_var,
+            command=self._on_source_changed,
+        )
+        self.source_switch.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+        ctk.CTkLabel(input_row, text="Устройство").grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self._device_var = ctk.StringVar(value="По умолчанию")
+        self.device_menu = ctk.CTkOptionMenu(
+            input_row,
+            variable=self._device_var,
+            values=["По умолчанию"],
+            command=self._on_device_selected,
+        )
+        self.device_menu.grid(row=0, column=3, sticky="ew")
+        self._refresh_device_menu()
+
         controls = ctk.CTkFrame(self)
-        controls.grid(row=2, column=0, sticky="ew", padx=20, pady=4)
+        controls.grid(row=3, column=0, sticky="ew", padx=20, pady=4)
         controls.grid_columnconfigure(0, weight=1)
 
         self.record_btn = ctk.CTkButton(
@@ -203,10 +242,10 @@ class TranscriptionApp(ctk.CTk):
         self.process_file_btn.grid(row=0, column=2, padx=(8, 0))
 
         output_outer = ctk.CTkFrame(self)
-        output_outer.grid(row=3, column=0, sticky="nsew", padx=20, pady=(8, 12))
+        output_outer.grid(row=4, column=0, sticky="nsew", padx=20, pady=(8, 12))
         output_outer.grid_rowconfigure(1, weight=1)
         output_outer.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)
+        self.grid_rowconfigure(4, weight=1)
 
         actions = ctk.CTkFrame(output_outer, fg_color="transparent")
         actions.grid(row=0, column=0, sticky="ew", pady=(12, 8), padx=12)
@@ -243,7 +282,7 @@ class TranscriptionApp(ctk.CTk):
     def _is_busy(self) -> bool:
         return (
             self._processing
-            or self.mic.is_recording
+            or self.capture.is_recording
             or (self._live_session is not None and self._live_session.is_active)
         )
 
@@ -293,9 +332,11 @@ class TranscriptionApp(ctk.CTk):
     def _set_busy(self, busy: bool) -> None:
         self._processing = busy
         state = "disabled" if busy else "normal"
-        if not self.mic.is_recording and not (self._live_session and self._live_session.is_active):
+        if not self.capture.is_recording and not (self._live_session and self._live_session.is_active):
             self.record_btn.configure(state=state)
         self.mode_switch.configure(state=state)
+        self.source_switch.configure(state=state)
+        self.device_menu.configure(state=state)
         self.process_file_btn.configure(state=state)
 
     def _toggle_record(self) -> None:
@@ -306,17 +347,59 @@ class TranscriptionApp(ctk.CTk):
         else:
             self._toggle_batch()
 
+    def _is_system_source(self) -> bool:
+        return self._source_var.get() == SOURCE_SYSTEM
+
+    def _refresh_device_menu(self) -> None:
+        if self._is_system_source():
+            self._device_options = list_system_audio_devices()
+        else:
+            self._device_options = list_microphone_devices()
+        labels = [opt.label for opt in self._device_options]
+        if not labels:
+            labels = ["По умолчанию"]
+        self.device_menu.configure(values=labels)
+        if self._device_var.get() not in labels:
+            self._device_var.set(labels[0])
+
+    def _on_source_changed(self, _value: str) -> None:
+        if self._is_busy():
+            messagebox.showwarning("Источник", "Сначала остановите запись.")
+            self._source_var.set(SOURCE_MIC if self._is_system_source() else SOURCE_SYSTEM)
+            return
+        self._refresh_device_menu()
+
+    def _on_device_selected(self, _value: str) -> None:
+        pass
+
+    def _get_capture_config(self) -> CaptureConfig:
+        label = self._device_var.get()
+        device: int | None = None
+        for opt in self._device_options:
+            if opt.label == label:
+                device = opt.index
+                break
+        source = AudioSource.SYSTEM if self._is_system_source() else AudioSource.MICROPHONE
+        return CaptureConfig(source=source, device=device)
+
     def _toggle_batch(self) -> None:
-        if self.mic.is_recording:
+        if self.capture.is_recording:
             self._stop_batch()
         else:
             self._start_batch()
 
     def _start_batch(self) -> None:
+        if self._is_system_source() and sys.platform != "win32":
+            messagebox.showerror(
+                "Системный звук",
+                "Захват системного звука поддерживается только на Windows.",
+            )
+            return
         try:
-            self.mic.start()
+            self.capture.set_capture(self._get_capture_config())
+            self.capture.start()
         except Exception as exc:
-            messagebox.showerror("Микрофон", str(exc))
+            messagebox.showerror("Запись", str(exc))
             return
         self.record_btn.configure(
             text="Стоп и отправить",
@@ -327,7 +410,7 @@ class TranscriptionApp(ctk.CTk):
 
     def _stop_batch(self) -> None:
         try:
-            recording = self.mic.stop()
+            recording = self.capture.stop()
         except Exception as exc:
             self._reset_record_button()
             messagebox.showerror("Запись", str(exc))
@@ -372,10 +455,18 @@ class TranscriptionApp(ctk.CTk):
         def on_event(event: LiveEvent) -> None:
             self._ui_events.put(event)
 
+        if self._is_system_source() and sys.platform != "win32":
+            messagebox.showerror(
+                "Системный звук",
+                "Захват системного звука поддерживается только на Windows.",
+            )
+            return
+
         self._live_session = LiveSession(
             settings=self.service.settings,
             processor=self.service.processor,
             on_event=on_event,
+            capture=self._get_capture_config(),
         )
         try:
             self._live_session.start(options)
@@ -390,6 +481,8 @@ class TranscriptionApp(ctk.CTk):
             hover_color="#962828",
         )
         self.mode_switch.configure(state="disabled")
+        self.source_switch.configure(state="disabled")
+        self.device_menu.configure(state="disabled")
         self._set_status("Слушаю… говорите, пауза = новая реплика")
 
     def _stop_live(self) -> None:
@@ -398,6 +491,8 @@ class TranscriptionApp(ctk.CTk):
             self._live_session = None
         self._reset_record_button()
         self.mode_switch.configure(state="normal")
+        self.source_switch.configure(state="normal")
+        self.device_menu.configure(state="normal")
         self._set_status("Лайв остановлен")
 
     def _reset_record_button(self) -> None:
@@ -539,9 +634,9 @@ class TranscriptionApp(ctk.CTk):
     def _on_close(self) -> None:
         if self._live_session and self._live_session.is_active:
             self._live_session.stop()
-        if self.mic.is_recording:
+        if self.capture.is_recording:
             try:
-                self.mic.stop()
+                self.capture.stop()
             except Exception:
                 pass
         self.destroy()

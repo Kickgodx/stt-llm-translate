@@ -2,8 +2,8 @@ import queue
 import threading
 from collections.abc import Callable
 
-import sounddevice as sd
-
+from ai_audio_transcription.audio_devices import CaptureConfig
+from ai_audio_transcription.audio_input import AudioInputStream
 from ai_audio_transcription.config import Settings
 from ai_audio_transcription.live.events import LiveEvent, Segment
 from ai_audio_transcription.live.segmenter import PhraseSegmenter
@@ -22,16 +22,17 @@ class LiveSession:
         settings: Settings,
         processor: AudioProcessor,
         on_event: Callable[[LiveEvent], None],
+        capture: CaptureConfig | None = None,
         device: int | None = None,
     ) -> None:
         self._settings = settings
         self._processor = processor
         self._on_event = on_event
-        self._device = device
+        self._capture = capture or CaptureConfig(device=device)
 
         self._running = False
         self._generation = 0
-        self._stream: sd.InputStream | None = None
+        self._input: AudioInputStream | None = None
         self._segment_queue: queue.Queue[Segment | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._segmenter: PhraseSegmenter | None = None
@@ -77,21 +78,17 @@ class LiveSession:
         )
         self._worker.start()
 
-        def callback(indata, _frames, _time, status) -> None:
-            if status:
-                log.warning("sounddevice: %s", status)
+        def on_audio(indata) -> None:
             if not self._running or self._segmenter is None:
                 return
             self._segmenter.feed(indata[:, 0])
 
-        self._stream = sd.InputStream(
-            samplerate=self._settings.record_sample_rate,
-            channels=1,
-            dtype="int16",
-            device=self._device,
-            callback=callback,
+        self._input = AudioInputStream(
+            config=self._capture,
+            sample_rate=self._settings.record_sample_rate,
+            on_audio=on_audio,
         )
-        self._stream.start()
+        self._input.start()
         log.info("Лайв-сессия запущена (gen=%s)", gen)
         self._on_event(LiveEvent(type="listening"))
 
@@ -101,10 +98,9 @@ class LiveSession:
 
         self._running = False
 
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+        if self._input is not None:
+            self._input.stop()
+            self._input = None
 
         if self._segmenter is not None:
             self._segmenter.flush()

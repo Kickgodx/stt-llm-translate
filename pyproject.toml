@@ -14,6 +14,7 @@ pydantic-settings = "^2.9.0"
 sounddevice = "^0.5.1"
 numpy = "^2.2.0"
 customtkinter = "^5.2.2"
+pyaudiowpatch = {markers = "sys_platform == \"win32\"", version = "^0.2.12.8"}
 
 [tool.poetry.scripts]
 app = "ai_audio_transcription.ui.app:main"
