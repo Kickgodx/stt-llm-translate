@@ -42,6 +42,12 @@ class LiveSession:
     def is_active(self) -> bool:
         return self._running
 
+    def send_segment_now(self) -> bool:
+        """Отправить накопленный фрагмент в очередь STT без ожидания паузы."""
+        if not self._running or self._segmenter is None:
+            return False
+        return self._segmenter.emit_now()
+
     def start(self, options: ProcessOptions) -> None:
         if self._running:
             raise RuntimeError("Лайв-сессия уже запущена")

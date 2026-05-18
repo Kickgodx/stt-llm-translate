@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     openrouter_stt_prompt: str | None = None
     record_sample_rate: int = 16000
     record_ram_max_seconds: float = 300.0
-    live_pause_ms: float = 800.0
+    live_pause_ms: float = 2000.0
     live_min_segment_ms: float = 400.0
     live_max_segment_ms: float = 30_000.0
     live_speech_rms_threshold: float = 400.0

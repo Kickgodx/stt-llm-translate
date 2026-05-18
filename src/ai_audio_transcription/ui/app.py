@@ -138,8 +138,12 @@ class TranscriptionApp(ctk.CTk):
         controls.grid(row=3, column=0, sticky="ew", padx=20, pady=4)
         controls.grid_columnconfigure(0, weight=1)
 
+        record_row = ctk.CTkFrame(controls, fg_color="transparent")
+        record_row.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        record_row.grid_columnconfigure(0, weight=1)
+
         self.record_btn = ctk.CTkButton(
-            controls,
+            record_row,
             text="Запись",
             height=52,
             font=ctk.CTkFont(size=18, weight="bold"),
@@ -147,7 +151,21 @@ class TranscriptionApp(ctk.CTk):
             hover_color="#246e3f",
             command=self._toggle_record,
         )
-        self.record_btn.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        self.record_btn.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self.send_segment_btn = ctk.CTkButton(
+            record_row,
+            text="Отправить",
+            width=130,
+            height=52,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color="#3a6ea5",
+            hover_color="#2f5a87",
+            command=self._send_live_segment,
+            state="disabled",
+        )
+        self.send_segment_btn.grid(row=0, column=1)
+        self.send_segment_btn.grid_remove()
 
         prompt_frame = ctk.CTkFrame(controls, fg_color="transparent")
         prompt_frame.grid(row=1, column=0, sticky="ew")
@@ -293,13 +311,16 @@ class TranscriptionApp(ctk.CTk):
             return
         if self._is_live_mode():
             self._show_live_output()
-            self._set_status("Лайв: нажмите кнопку для старта")
+            self._set_status("Лайв: старт или «Отправить» по паузе / вручную")
             self.record_btn.configure(text="Старт лайв")
+            self.send_segment_btn.grid()
             self.show_transcript_cb.configure(state="disabled")
         else:
             self._show_batch_output()
             self._set_status("Готов к записи")
             self.record_btn.configure(text="Запись")
+            self.send_segment_btn.grid_remove()
+            self.send_segment_btn.configure(state="disabled")
             self.show_transcript_cb.configure(state="normal")
 
     def _show_batch_output(self) -> None:
@@ -338,6 +359,10 @@ class TranscriptionApp(ctk.CTk):
         self.source_switch.configure(state=state)
         self.device_menu.configure(state=state)
         self.process_file_btn.configure(state=state)
+        if self._is_live_mode() and self._live_session and self._live_session.is_active:
+            self.send_segment_btn.configure(state="normal")
+        elif self._is_live_mode():
+            self.send_segment_btn.configure(state="disabled")
 
     def _toggle_record(self) -> None:
         if self._processing:
@@ -483,7 +508,8 @@ class TranscriptionApp(ctk.CTk):
         self.mode_switch.configure(state="disabled")
         self.source_switch.configure(state="disabled")
         self.device_menu.configure(state="disabled")
-        self._set_status("Слушаю… говорите, пауза = новая реплика")
+        self.send_segment_btn.configure(state="normal")
+        self._set_status("Слушаю… пауза ~2 с или кнопка «Отправить»")
 
     def _stop_live(self) -> None:
         if self._live_session:
@@ -493,7 +519,16 @@ class TranscriptionApp(ctk.CTk):
         self.mode_switch.configure(state="normal")
         self.source_switch.configure(state="normal")
         self.device_menu.configure(state="normal")
+        self.send_segment_btn.configure(state="disabled")
         self._set_status("Лайв остановлен")
+
+    def _send_live_segment(self) -> None:
+        if not self._live_session or not self._live_session.is_active:
+            return
+        if self._live_session.send_segment_now():
+            self._set_status("Фрагмент отправлен…")
+        else:
+            self._set_status("Нечего отправить — сначала говорите")
 
     def _reset_record_button(self) -> None:
         label = "Старт лайв" if self._is_live_mode() else "Запись"
