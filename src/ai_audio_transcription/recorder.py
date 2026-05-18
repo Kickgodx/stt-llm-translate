@@ -159,9 +159,7 @@ class AudioCaptureSession:
         if self._frames_written == 0:
             if self._wav_path:
                 self._wav_path.unlink(missing_ok=True)
-            raise RuntimeError(
-                "Запись пуста. Проверьте источник звука или запишите дольше."
-            )
+            raise RuntimeError("Запись пуста. Проверьте источник звука или запишите дольше.")
 
         duration = self._frames_written / self.sample_rate
         if self._use_file:

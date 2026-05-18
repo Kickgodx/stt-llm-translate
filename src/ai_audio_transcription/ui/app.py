@@ -353,7 +353,9 @@ class TranscriptionApp(ctk.CTk):
     def _set_busy(self, busy: bool) -> None:
         self._processing = busy
         state = "disabled" if busy else "normal"
-        if not self.capture.is_recording and not (self._live_session and self._live_session.is_active):
+        if not self.capture.is_recording and not (
+            self._live_session and self._live_session.is_active
+        ):
             self.record_btn.configure(state=state)
         self.mode_switch.configure(state=state)
         self.source_switch.configure(state=state)
